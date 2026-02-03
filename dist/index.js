@@ -31880,6 +31880,9 @@ function isCurrentWorkflowRun(checkRun) {
   if (!currentRunId) return false;
   if (checkRun.external_id && String(checkRun.external_id) === String(currentRunId)) return true;
   if (checkRun.details_url && checkRun.details_url.includes(`/runs/${currentRunId}`)) return true;
+  if (checkRun.html_url && checkRun.html_url.includes(`/runs/${currentRunId}`)) return true;
+  if (checkRun.check_suite?.url && checkRun.check_suite.url.includes(`/runs/${currentRunId}`)) return true;
+  if (checkRun.check_suite?.id && String(checkRun.check_suite.id) === String(currentRunId)) return true;
   return false;
 }
 
