@@ -47,10 +47,20 @@ function isCurrentWorkflowRun(checkRun) {
   return false;
 }
 
+function matchesCurrentWorkflowName(name) {
+  if (!name) return false;
+  if (CURRENT_WORKFLOW && (name === CURRENT_WORKFLOW || name.startsWith(`${CURRENT_WORKFLOW} /`))) {
+    return true;
+  }
+  if (CURRENT_JOB && (name === CURRENT_JOB || name.endsWith(` / ${CURRENT_JOB}`))) {
+    return true;
+  }
+  return false;
+}
+
 function isCurrentWorkflowCheck(checkRun) {
   if (isCurrentWorkflowRun(checkRun)) return true;
-  if (CURRENT_JOB && checkRun.name === CURRENT_JOB) return true;
-  if (CURRENT_WORKFLOW && checkRun.name === CURRENT_WORKFLOW) return true;
+  if (matchesCurrentWorkflowName(checkRun.name)) return true;
   return false;
 }
 
@@ -64,8 +74,7 @@ function isCurrentStatusForRun(status) {
 
 function isCurrentWorkflowStatus(status) {
   if (isCurrentStatusForRun(status)) return true;
-  if (CURRENT_JOB && status.context === CURRENT_JOB) return true;
-  if (CURRENT_WORKFLOW && status.context === CURRENT_WORKFLOW) return true;
+  if (matchesCurrentWorkflowName(status.context)) return true;
   return false;
 }
 
