@@ -1,0 +1,14 @@
+name: "Dependabot Squash Bot"
+description: "Auto-squash-merge Dependabot PRs when checks pass"
+author: "moltar-bot"
+inputs:
+  github_token:
+    description: "GitHub token with repo scope"
+    required: true
+  min_approvals:
+    description: "Minimum number of approved reviews required"
+    required: false
+    default: "1"
+runs:
+  using: "node20"
+  main: "dist/index.js"
