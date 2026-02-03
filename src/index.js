@@ -77,6 +77,7 @@ function matchesJobName(name, job) {
   if (!normalizedNameKey || !normalizedJobKey) return false;
   if (normalizedNameKey === normalizedJobKey) return true;
   if (normalizedNameKey.includes(normalizedJobKey)) return true;
+  if (normalizedJobKey.includes(normalizedNameKey)) return true;
   return false;
 }
 
@@ -96,6 +97,7 @@ function matchesCurrentRunJobName(name) {
     if (!normalizedNameKey || !normalizedJobKey) continue;
     if (normalizedNameKey === normalizedJobKey) return true;
     if (normalizedNameKey.includes(normalizedJobKey)) return true;
+    if (normalizedJobKey.includes(normalizedNameKey)) return true;
   }
   return false;
 }
