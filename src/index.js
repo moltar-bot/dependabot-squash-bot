@@ -38,8 +38,11 @@ function countApprovals(reviews) {
 
 const CURRENT_WORKFLOW = process.env.GITHUB_WORKFLOW;
 const CURRENT_JOB = process.env.GITHUB_JOB;
+const CURRENT_ACTION = process.env.GITHUB_ACTION;
+const CURRENT_WORKFLOW_REF = process.env.GITHUB_WORKFLOW_REF;
 const CURRENT_RUN_JOB_NAMES = new Set();
 const CURRENT_RUN_JOB_IDS = new Set();
+const IGNORE_CHECK_NAMES = new Set();
 
 function isCurrentWorkflowRun(checkRun) {
   const currentRunId = process.env.GITHUB_RUN_ID;
@@ -63,6 +66,22 @@ function normalizeKey(value) {
     .replace(/[^a-z0-9]+/g, '');
 }
 
+function splitCsv(value) {
+  if (!value) return [];
+  return String(value)
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function workflowRefName(ref) {
+  if (!ref) return '';
+  const [pathPart] = String(ref).split('@');
+  const fileName = pathPart.split('/').pop();
+  if (!fileName) return '';
+  return fileName.replace(/\.[^/.]+$/, '');
+}
+
 function matchesJobName(name, job) {
   const normalizedName = normalizeName(name);
   const normalizedJob = normalizeName(job);
@@ -79,6 +98,25 @@ function matchesJobName(name, job) {
   if (normalizedNameKey.includes(normalizedJobKey)) return true;
   if (normalizedJobKey.includes(normalizedNameKey)) return true;
   return false;
+}
+
+function matchesIgnoredName(name) {
+  for (const ignored of IGNORE_CHECK_NAMES) {
+    if (matchesJobName(name, ignored)) return true;
+  }
+  return false;
+}
+
+function seedIgnoreCheckNames(ignoreInput) {
+  IGNORE_CHECK_NAMES.clear();
+  const workflowFromRef = workflowRefName(CURRENT_WORKFLOW_REF);
+  const candidates = [CURRENT_WORKFLOW, CURRENT_JOB, CURRENT_ACTION, workflowFromRef];
+  for (const candidate of candidates) {
+    if (candidate) IGNORE_CHECK_NAMES.add(candidate);
+  }
+  for (const entry of splitCsv(ignoreInput)) {
+    IGNORE_CHECK_NAMES.add(entry);
+  }
 }
 
 function matchesCurrentRunJobName(name) {
@@ -104,22 +142,8 @@ function matchesCurrentRunJobName(name) {
 
 function matchesCurrentWorkflowName(name) {
   if (!name) return false;
-  const normalizedName = normalizeName(name);
-  if (CURRENT_WORKFLOW) {
-    const normalizedWorkflow = normalizeName(CURRENT_WORKFLOW);
-    if (
-      normalizedName === normalizedWorkflow ||
-      normalizedName.startsWith(`${normalizedWorkflow} /`)
-    ) {
-      return true;
-    }
-  }
-  if (CURRENT_JOB && matchesJobName(name, CURRENT_JOB)) {
-    return true;
-  }
-  if (matchesCurrentRunJobName(name)) {
-    return true;
-  }
+  if (matchesIgnoredName(name)) return true;
+  if (matchesCurrentRunJobName(name)) return true;
   return false;
 }
 
@@ -249,7 +273,10 @@ async function run() {
   try {
     const token = core.getInput('github_token', { required: true });
     const minApprovalsInput = core.getInput('min_approvals');
+    const ignoreChecksInput = core.getInput('ignore_checks');
     const minApprovals = minApprovalsInput ? parseInt(minApprovalsInput, 10) : 1;
+
+    seedIgnoreCheckNames(ignoreChecksInput);
 
     const octokit = github.getOctokit(token);
     const { owner, repo } = github.context.repo;
