@@ -5,22 +5,10 @@ inputs:
   github_token:
     description: "GitHub token with repo scope"
     required: true
-  allow_update_types:
-    description: "Comma-separated list of allowed update types: major, minor, patch. Default: all"
-    required: false
-    default: ""
-  require_label:
-    description: "Comma-separated list of labels required on the PR"
-    required: false
-    default: ""
-  deny_labels:
-    description: "Comma-separated list of labels that will block merging"
-    required: false
-    default: ""
   min_approvals:
     description: "Minimum number of approved reviews required"
     required: false
-    default: ""
+    default: "1"
 runs:
   using: "node20"
   main: "dist/index.js"

@@ -1,26 +1,7 @@
 const core = require('@actions/core');
 const github = require('@actions/github');
-const semver = require('semver');
 
 const DEPENDABOT_LOGINS = new Set(['dependabot[bot]', 'dependabot-preview[bot]']);
-
-function parseCsv(input) {
-  if (!input) return [];
-  return input
-    .split(',')
-    .map((v) => v.trim())
-    .filter(Boolean);
-}
-
-function getUpdateTypeFromTitle(title) {
-  if (!title) return null;
-  const match = title.match(/from\s+([^\s]+)\s+to\s+([^\s]+)/i);
-  if (!match) return null;
-  const from = semver.clean(match[1]);
-  const to = semver.clean(match[2]);
-  if (!from || !to) return null;
-  return semver.diff(from, to);
-}
 
 async function listOpenDependabotPRs(octokit, owner, repo) {
   const prs = await octokit.paginate(octokit.rest.pulls.list, {
@@ -67,12 +48,8 @@ async function checksArePassing(octokit, owner, repo, ref) {
   return statusOk && runsOk;
 }
 
-function labelsSet(pr) {
-  return new Set((pr.labels || []).map((l) => (typeof l === 'string' ? l : l.name)).filter(Boolean));
-}
-
 async function processPullRequest(octokit, owner, repo, pr, options) {
-  const { allowUpdateTypes, requiredLabels, denyLabels, minApprovals } = options;
+  const { minApprovals } = options;
 
   if (!DEPENDABOT_LOGINS.has(pr.user?.login)) {
     core.info(`Skipping PR #${pr.number}: not Dependabot`);
@@ -84,36 +61,11 @@ async function processPullRequest(octokit, owner, repo, pr, options) {
     return;
   }
 
-  const updateType = getUpdateTypeFromTitle(pr.title);
-  if (allowUpdateTypes.length > 0 && updateType && !allowUpdateTypes.includes(updateType)) {
-    core.info(`Skipping PR #${pr.number}: update type '${updateType}' not allowed`);
+  const reviews = await getReviews(octokit, owner, repo, pr.number);
+  const approvals = countApprovals(reviews);
+  if (approvals < minApprovals) {
+    core.info(`Skipping PR #${pr.number}: approvals ${approvals} < ${minApprovals}`);
     return;
-  }
-
-  const prLabels = labelsSet(pr);
-  if (requiredLabels.length > 0) {
-    const hasAll = requiredLabels.every((label) => prLabels.has(label));
-    if (!hasAll) {
-      core.info(`Skipping PR #${pr.number}: missing required label(s)`);
-      return;
-    }
-  }
-
-  if (denyLabels.length > 0) {
-    const hasDeny = denyLabels.some((label) => prLabels.has(label));
-    if (hasDeny) {
-      core.info(`Skipping PR #${pr.number}: has deny label`);
-      return;
-    }
-  }
-
-  if (minApprovals > 0) {
-    const reviews = await getReviews(octokit, owner, repo, pr.number);
-    const approvals = countApprovals(reviews);
-    if (approvals < minApprovals) {
-      core.info(`Skipping PR #${pr.number}: approvals ${approvals} < ${minApprovals}`);
-      return;
-    }
   }
 
   const checksPass = await checksArePassing(octokit, owner, repo, pr.head.sha);
@@ -140,11 +92,8 @@ async function processPullRequest(octokit, owner, repo, pr, options) {
 async function run() {
   try {
     const token = core.getInput('github_token', { required: true });
-    const allowUpdateTypes = parseCsv(core.getInput('allow_update_types'));
-    const requiredLabels = parseCsv(core.getInput('require_label'));
-    const denyLabels = parseCsv(core.getInput('deny_labels'));
     const minApprovalsInput = core.getInput('min_approvals');
-    const minApprovals = minApprovalsInput ? parseInt(minApprovalsInput, 10) : 0;
+    const minApprovals = minApprovalsInput ? parseInt(minApprovalsInput, 10) : 1;
 
     const octokit = github.getOctokit(token);
     const { owner, repo } = github.context.repo;
@@ -155,24 +104,14 @@ async function run() {
         core.info('No pull request in context.');
         return;
       }
-      await processPullRequest(octokit, owner, repo, pr, {
-        allowUpdateTypes,
-        requiredLabels,
-        denyLabels,
-        minApprovals,
-      });
+      await processPullRequest(octokit, owner, repo, pr, { minApprovals });
       return;
     }
 
     if (['schedule', 'workflow_dispatch'].includes(github.context.eventName)) {
       const prs = await listOpenDependabotPRs(octokit, owner, repo);
       for (const pr of prs) {
-        await processPullRequest(octokit, owner, repo, pr, {
-          allowUpdateTypes,
-          requiredLabels,
-          denyLabels,
-          minApprovals,
-        });
+        await processPullRequest(octokit, owner, repo, pr, { minApprovals });
       }
       return;
     }
