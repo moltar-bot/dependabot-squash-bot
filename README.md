@@ -13,6 +13,7 @@ GitHub Action that auto-squash-merges Dependabot PRs when checks pass.
 | --- | --- | --- | --- |
 | `github_token` | yes | GitHub token with repo scope | — |
 | `min_approvals` | no | Minimum number of approvals required | 1 |
+| `ignore_checks` | no | Comma-separated list of check/run names to ignore when evaluating check status | — |
 
 ## Example Workflow
 

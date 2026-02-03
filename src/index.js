@@ -36,16 +36,210 @@ function countApprovals(reviews) {
   return approvals;
 }
 
+const CURRENT_WORKFLOW = process.env.GITHUB_WORKFLOW;
+const CURRENT_JOB = process.env.GITHUB_JOB;
+const CURRENT_ACTION = process.env.GITHUB_ACTION;
+const CURRENT_WORKFLOW_REF = process.env.GITHUB_WORKFLOW_REF;
+const CURRENT_RUN_JOB_NAMES = new Set();
+const CURRENT_RUN_JOB_IDS = new Set();
+const IGNORE_CHECK_NAMES = new Set();
+
+function isCurrentWorkflowRun(checkRun) {
+  const currentRunId = process.env.GITHUB_RUN_ID;
+  if (!currentRunId) return false;
+  if (checkRun.external_id && String(checkRun.external_id) === String(currentRunId)) return true;
+  if (checkRun.external_id && CURRENT_RUN_JOB_IDS.has(String(checkRun.external_id))) return true;
+  if (checkRun.details_url && checkRun.details_url.includes(`/runs/${currentRunId}`)) return true;
+  if (checkRun.html_url && checkRun.html_url.includes(`/runs/${currentRunId}`)) return true;
+  if (checkRun.check_suite?.url && checkRun.check_suite.url.includes(`/runs/${currentRunId}`)) return true;
+  if (checkRun.check_suite?.id && String(checkRun.check_suite.id) === String(currentRunId)) return true;
+  return false;
+}
+
+function normalizeName(value) {
+  return String(value || '').toLowerCase();
+}
+
+function tokensForMatch(value) {
+  return String(value || '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/g)
+    .filter(Boolean);
+}
+
+function tokensContainSequence(haystack, needle) {
+  if (!needle.length || haystack.length < needle.length) return false;
+  for (let i = 0; i <= haystack.length - needle.length; i += 1) {
+    let matches = true;
+    for (let j = 0; j < needle.length; j += 1) {
+      if (haystack[i + j] !== needle[j]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) return true;
+  }
+  return false;
+}
+
+function splitCsv(value) {
+  if (!value) return [];
+  return String(value)
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function workflowRefName(ref) {
+  if (!ref) return '';
+  const [pathPart] = String(ref).split('@');
+  const fileName = pathPart.split('/').pop();
+  if (!fileName) return '';
+  return fileName.replace(/\.[^/.]+$/, '');
+}
+
+function matchesJobName(name, job) {
+  const normalizedName = normalizeName(name);
+  const normalizedJob = normalizeName(job);
+  if (!normalizedName || !normalizedJob) return false;
+  if (normalizedName === normalizedJob) return true;
+  if (normalizedName.startsWith(`${normalizedJob} `)) return true;
+  if (normalizedName.startsWith(`${normalizedJob} (`)) return true;
+  if (normalizedName.endsWith(` / ${normalizedJob}`)) return true;
+
+  const nameTokens = tokensForMatch(normalizedName);
+  const jobTokens = tokensForMatch(normalizedJob);
+  if (!nameTokens.length || !jobTokens.length) return false;
+  if (nameTokens.join(' ') === jobTokens.join(' ')) return true;
+  if (tokensContainSequence(nameTokens, jobTokens)) return true;
+  return false;
+}
+
+function matchesIgnoredName(name) {
+  for (const ignored of IGNORE_CHECK_NAMES) {
+    if (matchesJobName(name, ignored)) return true;
+  }
+  return false;
+}
+
+function seedIgnoreCheckNames(ignoreInput) {
+  IGNORE_CHECK_NAMES.clear();
+  const workflowFromRef = workflowRefName(CURRENT_WORKFLOW_REF);
+  const candidates = [CURRENT_WORKFLOW, CURRENT_JOB, CURRENT_ACTION, workflowFromRef];
+  for (const candidate of candidates) {
+    if (candidate) IGNORE_CHECK_NAMES.add(candidate);
+  }
+  for (const entry of splitCsv(ignoreInput)) {
+    IGNORE_CHECK_NAMES.add(entry);
+  }
+}
+
+function matchesCurrentRunJobName(name) {
+  const normalizedName = normalizeName(name);
+  if (!normalizedName) return false;
+  for (const jobName of CURRENT_RUN_JOB_NAMES) {
+    const normalizedJob = normalizeName(jobName);
+    if (!normalizedJob) continue;
+    if (normalizedName === normalizedJob) return true;
+    if (normalizedName.startsWith(`${normalizedJob} `)) return true;
+    if (normalizedName.startsWith(`${normalizedJob} (`)) return true;
+    if (normalizedName.endsWith(` / ${normalizedJob}`)) return true;
+
+    const nameTokens = tokensForMatch(normalizedName);
+    const jobTokens = tokensForMatch(normalizedJob);
+    if (!nameTokens.length || !jobTokens.length) continue;
+    if (nameTokens.join(' ') === jobTokens.join(' ')) return true;
+    if (tokensContainSequence(nameTokens, jobTokens)) return true;
+  }
+  return false;
+}
+
+function matchesCurrentWorkflowName(name) {
+  if (!name) return false;
+  if (matchesIgnoredName(name)) return true;
+  if (matchesCurrentRunJobName(name)) return true;
+  return false;
+}
+
+function isCurrentWorkflowCheck(checkRun) {
+  if (isCurrentWorkflowRun(checkRun)) return true;
+  if (matchesCurrentWorkflowName(checkRun.name)) return true;
+  return false;
+}
+
+function isCurrentStatusForRun(status) {
+  const currentRunId = process.env.GITHUB_RUN_ID;
+  if (!currentRunId) return false;
+  if (status.target_url && status.target_url.includes(`/runs/${currentRunId}`)) return true;
+  if (status.url && status.url.includes(`/runs/${currentRunId}`)) return true;
+  return false;
+}
+
+function isCurrentWorkflowStatus(status) {
+  if (isCurrentStatusForRun(status)) return true;
+  if (matchesCurrentWorkflowName(status.context)) return true;
+  return false;
+}
+
+function latestStatusByContext(statuses) {
+  const latest = new Map();
+  for (const status of statuses) {
+    if (!status.context) continue;
+    if (!latest.has(status.context)) {
+      latest.set(status.context, status);
+    }
+  }
+  return Array.from(latest.values());
+}
+
+function statusChecksArePassing(statuses) {
+  const latest = latestStatusByContext(statuses);
+  const filtered = latest.filter((status) => !isCurrentWorkflowStatus(status));
+  return filtered.every((status) => status.state === 'success');
+}
+
 async function checksArePassing(octokit, owner, repo, ref) {
-  const [combined, checkRuns] = await Promise.all([
-    octokit.rest.repos.getCombinedStatusForRef({ owner, repo, ref }),
+  const [commitStatuses, checkRuns] = await Promise.all([
+    octokit.paginate(octokit.rest.repos.listCommitStatusesForRef, {
+      owner,
+      repo,
+      ref,
+      per_page: 100,
+    }),
     octokit.rest.checks.listForRef({ owner, repo, ref, per_page: 100 }),
   ]);
 
-  const statusOk = combined.data.state === 'success';
+  const statusOk = statusChecksArePassing(commitStatuses);
   const runs = checkRuns.data.check_runs || [];
-  const runsOk = runs.every((run) => run.conclusion === 'success' || run.conclusion === 'skipped');
+  const filteredRuns = runs.filter((run) => !isCurrentWorkflowCheck(run));
+  const runsOk = filteredRuns.every(
+    (run) =>
+      run.status === 'completed' &&
+      (run.conclusion === 'success' ||
+        run.conclusion === 'skipped' ||
+        run.conclusion === 'neutral')
+  );
   return statusOk && runsOk;
+}
+
+async function loadCurrentRunJobNames(octokit, owner, repo) {
+  const currentRunId = process.env.GITHUB_RUN_ID;
+  if (!currentRunId) return;
+  try {
+    const jobs = await octokit.rest.actions.listJobsForWorkflowRun({
+      owner,
+      repo,
+      run_id: Number(currentRunId),
+      per_page: 100,
+    });
+    const jobList = jobs?.data?.jobs || [];
+    for (const job of jobList) {
+      if (job?.name) CURRENT_RUN_JOB_NAMES.add(job.name);
+      if (job?.id) CURRENT_RUN_JOB_IDS.add(String(job.id));
+    }
+  } catch (error) {
+    core.info(`Unable to load current workflow jobs: ${error.message}`);
+  }
 }
 
 async function processPullRequest(octokit, owner, repo, pr, options) {
@@ -93,10 +287,15 @@ async function run() {
   try {
     const token = core.getInput('github_token', { required: true });
     const minApprovalsInput = core.getInput('min_approvals');
+    const ignoreChecksInput = core.getInput('ignore_checks');
     const minApprovals = minApprovalsInput ? parseInt(minApprovalsInput, 10) : 1;
+
+    seedIgnoreCheckNames(ignoreChecksInput);
 
     const octokit = github.getOctokit(token);
     const { owner, repo } = github.context.repo;
+
+    await loadCurrentRunJobNames(octokit, owner, repo);
 
     if (github.context.eventName === 'pull_request') {
       const pr = github.context.payload.pull_request;

@@ -9,6 +9,9 @@ inputs:
     description: "Minimum number of approved reviews required"
     required: false
     default: "1"
+  ignore_checks:
+    description: "Comma-separated list of check/run names to ignore when evaluating check status"
+    required: false
 runs:
   using: "node20"
   main: "dist/index.js"
