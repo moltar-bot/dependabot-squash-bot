@@ -31893,6 +31893,12 @@ function normalizeName(value) {
   return String(value || '').toLowerCase();
 }
 
+function normalizeKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
 function matchesJobName(name, job) {
   const normalizedName = normalizeName(name);
   const normalizedJob = normalizeName(job);
@@ -31901,6 +31907,12 @@ function matchesJobName(name, job) {
   if (normalizedName.startsWith(`${normalizedJob} `)) return true;
   if (normalizedName.startsWith(`${normalizedJob} (`)) return true;
   if (normalizedName.endsWith(` / ${normalizedJob}`)) return true;
+
+  const normalizedNameKey = normalizeKey(normalizedName);
+  const normalizedJobKey = normalizeKey(normalizedJob);
+  if (!normalizedNameKey || !normalizedJobKey) return false;
+  if (normalizedNameKey === normalizedJobKey) return true;
+  if (normalizedNameKey.includes(normalizedJobKey)) return true;
   return false;
 }
 
@@ -31914,6 +31926,12 @@ function matchesCurrentRunJobName(name) {
     if (normalizedName.startsWith(`${normalizedJob} `)) return true;
     if (normalizedName.startsWith(`${normalizedJob} (`)) return true;
     if (normalizedName.endsWith(` / ${normalizedJob}`)) return true;
+
+    const normalizedNameKey = normalizeKey(normalizedName);
+    const normalizedJobKey = normalizeKey(normalizedJob);
+    if (!normalizedNameKey || !normalizedJobKey) continue;
+    if (normalizedNameKey === normalizedJobKey) return true;
+    if (normalizedNameKey.includes(normalizedJobKey)) return true;
   }
   return false;
 }
