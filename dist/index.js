@@ -31875,11 +31875,13 @@ function countApprovals(reviews) {
 const CURRENT_WORKFLOW = process.env.GITHUB_WORKFLOW;
 const CURRENT_JOB = process.env.GITHUB_JOB;
 const CURRENT_RUN_JOB_NAMES = new Set();
+const CURRENT_RUN_JOB_IDS = new Set();
 
 function isCurrentWorkflowRun(checkRun) {
   const currentRunId = process.env.GITHUB_RUN_ID;
   if (!currentRunId) return false;
   if (checkRun.external_id && String(checkRun.external_id) === String(currentRunId)) return true;
+  if (checkRun.external_id && CURRENT_RUN_JOB_IDS.has(String(checkRun.external_id))) return true;
   if (checkRun.details_url && checkRun.details_url.includes(`/runs/${currentRunId}`)) return true;
   if (checkRun.html_url && checkRun.html_url.includes(`/runs/${currentRunId}`)) return true;
   if (checkRun.check_suite?.url && checkRun.check_suite.url.includes(`/runs/${currentRunId}`)) return true;
@@ -32011,6 +32013,7 @@ async function loadCurrentRunJobNames(octokit, owner, repo) {
     const jobList = jobs?.data?.jobs || [];
     for (const job of jobList) {
       if (job?.name) CURRENT_RUN_JOB_NAMES.add(job.name);
+      if (job?.id) CURRENT_RUN_JOB_IDS.add(String(job.id));
     }
   } catch (error) {
     core.info(`Unable to load current workflow jobs: ${error.message}`);
