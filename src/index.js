@@ -47,12 +47,34 @@ function isCurrentWorkflowRun(checkRun) {
   return false;
 }
 
+function normalizeName(value) {
+  return String(value || '').toLowerCase();
+}
+
+function matchesJobName(name, job) {
+  const normalizedName = normalizeName(name);
+  const normalizedJob = normalizeName(job);
+  if (!normalizedName || !normalizedJob) return false;
+  if (normalizedName === normalizedJob) return true;
+  if (normalizedName.startsWith(`${normalizedJob} `)) return true;
+  if (normalizedName.startsWith(`${normalizedJob} (`)) return true;
+  if (normalizedName.endsWith(` / ${normalizedJob}`)) return true;
+  return false;
+}
+
 function matchesCurrentWorkflowName(name) {
   if (!name) return false;
-  if (CURRENT_WORKFLOW && (name === CURRENT_WORKFLOW || name.startsWith(`${CURRENT_WORKFLOW} /`))) {
-    return true;
+  const normalizedName = normalizeName(name);
+  if (CURRENT_WORKFLOW) {
+    const normalizedWorkflow = normalizeName(CURRENT_WORKFLOW);
+    if (
+      normalizedName === normalizedWorkflow ||
+      normalizedName.startsWith(`${normalizedWorkflow} /`)
+    ) {
+      return true;
+    }
   }
-  if (CURRENT_JOB && (name === CURRENT_JOB || name.endsWith(` / ${CURRENT_JOB}`))) {
+  if (CURRENT_JOB && matchesJobName(name, CURRENT_JOB)) {
     return true;
   }
   return false;
