@@ -38,6 +38,7 @@ function countApprovals(reviews) {
 
 const CURRENT_WORKFLOW = process.env.GITHUB_WORKFLOW;
 const CURRENT_JOB = process.env.GITHUB_JOB;
+const CURRENT_RUN_JOB_NAMES = new Set();
 
 function isCurrentWorkflowRun(checkRun) {
   const currentRunId = process.env.GITHUB_RUN_ID;
@@ -65,6 +66,20 @@ function matchesJobName(name, job) {
   return false;
 }
 
+function matchesCurrentRunJobName(name) {
+  const normalizedName = normalizeName(name);
+  if (!normalizedName) return false;
+  for (const jobName of CURRENT_RUN_JOB_NAMES) {
+    const normalizedJob = normalizeName(jobName);
+    if (!normalizedJob) continue;
+    if (normalizedName === normalizedJob) return true;
+    if (normalizedName.startsWith(`${normalizedJob} `)) return true;
+    if (normalizedName.startsWith(`${normalizedJob} (`)) return true;
+    if (normalizedName.endsWith(` / ${normalizedJob}`)) return true;
+  }
+  return false;
+}
+
 function matchesCurrentWorkflowName(name) {
   if (!name) return false;
   const normalizedName = normalizeName(name);
@@ -78,6 +93,9 @@ function matchesCurrentWorkflowName(name) {
     }
   }
   if (CURRENT_JOB && matchesJobName(name, CURRENT_JOB)) {
+    return true;
+  }
+  if (matchesCurrentRunJobName(name)) {
     return true;
   }
   return false;
@@ -144,6 +162,25 @@ async function checksArePassing(octokit, owner, repo, ref) {
   return statusOk && runsOk;
 }
 
+async function loadCurrentRunJobNames(octokit, owner, repo) {
+  const currentRunId = process.env.GITHUB_RUN_ID;
+  if (!currentRunId) return;
+  try {
+    const jobs = await octokit.rest.actions.listJobsForWorkflowRun({
+      owner,
+      repo,
+      run_id: Number(currentRunId),
+      per_page: 100,
+    });
+    const jobList = jobs?.data?.jobs || [];
+    for (const job of jobList) {
+      if (job?.name) CURRENT_RUN_JOB_NAMES.add(job.name);
+    }
+  } catch (error) {
+    core.info(`Unable to load current workflow jobs: ${error.message}`);
+  }
+}
+
 async function processPullRequest(octokit, owner, repo, pr, options) {
   const { minApprovals } = options;
 
@@ -193,6 +230,8 @@ async function run() {
 
     const octokit = github.getOctokit(token);
     const { owner, repo } = github.context.repo;
+
+    await loadCurrentRunJobNames(octokit, owner, repo);
 
     if (github.context.eventName === 'pull_request') {
       const pr = github.context.payload.pull_request;
