@@ -31896,10 +31896,26 @@ function normalizeName(value) {
   return String(value || '').toLowerCase();
 }
 
-function normalizeKey(value) {
+function tokensForMatch(value) {
   return String(value || '')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '');
+    .split(/[^a-z0-9]+/g)
+    .filter(Boolean);
+}
+
+function tokensContainSequence(haystack, needle) {
+  if (!needle.length || haystack.length < needle.length) return false;
+  for (let i = 0; i <= haystack.length - needle.length; i += 1) {
+    let matches = true;
+    for (let j = 0; j < needle.length; j += 1) {
+      if (haystack[i + j] !== needle[j]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) return true;
+  }
+  return false;
 }
 
 function splitCsv(value) {
@@ -31927,12 +31943,11 @@ function matchesJobName(name, job) {
   if (normalizedName.startsWith(`${normalizedJob} (`)) return true;
   if (normalizedName.endsWith(` / ${normalizedJob}`)) return true;
 
-  const normalizedNameKey = normalizeKey(normalizedName);
-  const normalizedJobKey = normalizeKey(normalizedJob);
-  if (!normalizedNameKey || !normalizedJobKey) return false;
-  if (normalizedNameKey === normalizedJobKey) return true;
-  if (normalizedNameKey.includes(normalizedJobKey)) return true;
-  if (normalizedJobKey.includes(normalizedNameKey)) return true;
+  const nameTokens = tokensForMatch(normalizedName);
+  const jobTokens = tokensForMatch(normalizedJob);
+  if (!nameTokens.length || !jobTokens.length) return false;
+  if (nameTokens.join(' ') === jobTokens.join(' ')) return true;
+  if (tokensContainSequence(nameTokens, jobTokens)) return true;
   return false;
 }
 
@@ -31966,12 +31981,11 @@ function matchesCurrentRunJobName(name) {
     if (normalizedName.startsWith(`${normalizedJob} (`)) return true;
     if (normalizedName.endsWith(` / ${normalizedJob}`)) return true;
 
-    const normalizedNameKey = normalizeKey(normalizedName);
-    const normalizedJobKey = normalizeKey(normalizedJob);
-    if (!normalizedNameKey || !normalizedJobKey) continue;
-    if (normalizedNameKey === normalizedJobKey) return true;
-    if (normalizedNameKey.includes(normalizedJobKey)) return true;
-    if (normalizedJobKey.includes(normalizedNameKey)) return true;
+    const nameTokens = tokensForMatch(normalizedName);
+    const jobTokens = tokensForMatch(normalizedJob);
+    if (!nameTokens.length || !jobTokens.length) continue;
+    if (nameTokens.join(' ') === jobTokens.join(' ')) return true;
+    if (tokensContainSequence(nameTokens, jobTokens)) return true;
   }
   return false;
 }
