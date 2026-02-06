@@ -31925,6 +31925,12 @@ async function processPullRequest(octokit, owner, repo, pr, options) {
   });
 }
 
+async function getPRFromCheckSuite(octokit, owner, repo, headSha) {
+  // Find the open PR associated with this check suite's head SHA
+  const prs = await listOpenDependabotPRs(octokit, owner, repo);
+  return prs.find((pr) => pr.head.sha === headSha);
+}
+
 async function run() {
   try {
     const token = core.getInput('github_token', { required: true });
@@ -31940,6 +31946,39 @@ async function run() {
         core.info('No pull request in context.');
         return;
       }
+      await processPullRequest(octokit, owner, repo, pr, { minApprovals });
+      return;
+    }
+
+    // Handle review submitted event (approval)
+    if (github.context.eventName === 'pull_request_review') {
+      const pr = github.context.payload.pull_request;
+      const review = github.context.payload.review;
+      if (!pr) {
+        core.info('No pull request in context.');
+        return;
+      }
+      core.info(`Review submitted on PR #${pr.number}: ${review?.state || 'unknown'}`);
+      await processPullRequest(octokit, owner, repo, pr, { minApprovals });
+      return;
+    }
+
+    // Handle check suite completed event
+    if (github.context.eventName === 'check_suite') {
+      const checkSuite = github.context.payload.check_suite;
+      if (checkSuite?.conclusion !== 'success') {
+        core.info(`Check suite conclusion: ${checkSuite?.conclusion}, skipping`);
+        return;
+      }
+      const headSha = checkSuite.head_sha;
+      core.info(`Check suite completed successfully for SHA: ${headSha}`);
+
+      const pr = await getPRFromCheckSuite(octokit, owner, repo, headSha);
+      if (!pr) {
+        core.info(`No open Dependabot PR found for SHA: ${headSha}`);
+        return;
+      }
+      core.info(`Found matching PR #${pr.number}`);
       await processPullRequest(octokit, owner, repo, pr, { minApprovals });
       return;
     }
