@@ -21,9 +21,11 @@ GitHub Action that auto-squash-merges Dependabot PRs when checks pass.
 name: Dependabot Auto-Merge
 on:
   pull_request:
-    types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled]
+    types: [opened, synchronize, reopened]
+  pull_request_review:
+    types: [submitted]
   schedule:
-    - cron: '0 * * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 jobs:
